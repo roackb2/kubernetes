@@ -111,6 +111,7 @@ func tryConnect(service proxy.ServicePortName, srcAddr net.Addr, protocol string
 
 func (tcp *tcpProxySocket) ProxyLoop(service proxy.ServicePortName, myInfo *serviceInfo, proxier *Proxier) {
 	for {
+		start := time.Now()
 		if info, exists := proxier.getServiceInfo(service); !exists || info != myInfo {
 			// The service port was closed or replaced.
 			return
@@ -133,19 +134,22 @@ func (tcp *tcpProxySocket) ProxyLoop(service proxy.ServicePortName, myInfo *serv
 			continue
 		}
 		glog.V(2).Infof("Accepted TCP connection from %v to %v", inConn.RemoteAddr(), inConn.LocalAddr())
-		outConn, err := tryConnect(service, inConn.(*net.TCPConn).RemoteAddr(), "tcp", proxier)
-		if err != nil {
-			glog.Errorf("Failed to connect to balancer: %v", err)
-			inConn.Close()
-			continue
-		}
-		// Spin up an async copy loop.
-		go proxyTCP(inConn.(*net.TCPConn), outConn.(*net.TCPConn))
+		go connecBalancer(service, inConn, proxier, start)
 	}
 }
 
+func connecBalancer(service proxy.ServicePortName, inConn net.Conn, proxier *Proxier, start time.Time) {
+	outConn, err := tryConnect(service, inConn.(*net.TCPConn).RemoteAddr(), "tcp", proxier)
+	if err != nil {
+		glog.Errorf("Failed to connect to balancer: %v", err)
+		inConn.Close()
+	}
+	// Spin up an async copy loop.
+	go proxyTCP(inConn.(*net.TCPConn), outConn.(*net.TCPConn), start)
+}
+
 // proxyTCP proxies data bi-directionally between in and out.
-func proxyTCP(in, out *net.TCPConn) {
+func proxyTCP(in, out *net.TCPConn, start time.Time) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	glog.V(4).Infof("Creating proxy between %v <-> %v <-> %v <-> %v",
@@ -155,16 +159,18 @@ func proxyTCP(in, out *net.TCPConn) {
 	wg.Wait()
 	in.Close()
 	out.Close()
+	glog.V(4).Infof("Proxying request takes: %s", time.Since(start))
 }
 
 func copyBytes(direction string, dest, src *net.TCPConn, wg *sync.WaitGroup) {
 	defer wg.Done()
+	start := time.Now()
 	glog.V(4).Infof("Copying %s: %s -> %s", direction, src.RemoteAddr(), dest.RemoteAddr())
 	n, err := io.Copy(dest, src)
 	if err != nil {
 		glog.Errorf("I/O error: %v", err)
 	}
-	glog.V(4).Infof("Copied %d bytes %s: %s -> %s", n, direction, src.RemoteAddr(), dest.RemoteAddr())
+	glog.V(4).Infof("Copied %d bytes %s: %s -> %s, takes %s", n, direction, src.RemoteAddr(), dest.RemoteAddr(), time.Since(start))
 	dest.CloseWrite()
 	src.CloseRead()
 }

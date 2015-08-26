@@ -175,6 +175,7 @@ func CleanupLeftovers(ipt iptables.Interface) (encounteredError bool) {
 	args := []string{"-m", "comment", "--comment", "handle ClusterIPs; NOTE: this must be before the NodePort rules"}
 	if err := ipt.DeleteRule(iptables.TableNAT, iptables.ChainOutput, append(args, "-j", string(iptablesHostPortalChain))...); err != nil {
 		glog.Errorf("Error removing userspace rule: %v", err)
+
 		encounteredError = true
 	}
 	if err := ipt.DeleteRule(iptables.TableNAT, iptables.ChainPrerouting, append(args, "-j", string(iptablesContainerPortalChain))...); err != nil {

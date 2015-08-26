@@ -117,6 +117,7 @@ func isSessionAffinity(affinity *affinityPolicy) bool {
 func (lb *LoadBalancerRR) NextEndpoint(svcPort proxy.ServicePortName, srcAddr net.Addr) (string, error) {
 	// Coarse locking is simple.  We can get more fine-grained if/when we
 	// can prove it matters.
+	start := time.Now()
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
 
@@ -145,6 +146,7 @@ func (lb *LoadBalancerRR) NextEndpoint(svcPort proxy.ServicePortName, srcAddr ne
 			endpoint := sessionAffinity.endpoint
 			sessionAffinity.lastUsed = time.Now()
 			glog.V(4).Infof("NextEndpoint for service %q from IP %s with sessionAffinity %+v: %s", svcPort, ipaddr, sessionAffinity, endpoint)
+			glog.V(4).Infof("Time used for finding NextEndpoint with sessionAffinity %+v: %s", sessionAffinity, time.Since(start))
 			return endpoint, nil
 		}
 	}
@@ -164,7 +166,7 @@ func (lb *LoadBalancerRR) NextEndpoint(svcPort proxy.ServicePortName, srcAddr ne
 		affinity.clientIP = ipaddr
 		glog.V(4).Infof("Updated affinity key %s: %+v", ipaddr, state.affinity.affinityMap[ipaddr])
 	}
-
+	glog.V(4).Infof("Time used for finding NextEndpoint: %s", time.Since(start))
 	return endpoint, nil
 }
 
